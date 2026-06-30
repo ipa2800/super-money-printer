@@ -47,7 +47,7 @@ function fmtShares(v) {
 function sparkOption(values, color) {
   return {
     backgroundColor: 'transparent',
-    grid: { top: 2, right: 2, bottom: 2, left: 2 },
+    grid: { top: 2, right: 2, bottom: 2, left: 2, containLabel: false },
     xAxis: { type: 'category', show: false, data: values.map((_, i) => i) },
     yAxis: { type: 'value', show: false, scale: true },
     tooltip: { show: false },
@@ -58,6 +58,14 @@ function sparkOption(values, color) {
         colorStops: [{ offset: 0, color: color + '40' }, { offset: 1, color: color + '00' }] } },
     }],
   };
+}
+// ponytail: explicit width prevents canvas-bleed when CSS grid settles after init
+function initSpark(el, opt) {
+  const w = el.offsetWidth || 200;
+  const h = el.offsetHeight || 36;
+  const inst = echarts.init(el, null, { width: w, height: h, renderer: 'canvas' });
+  inst.setOption(opt);
+  return inst;
 }
 async function fetchJSON(url, opts) {
   const r = await fetch(url, opts);
@@ -318,8 +326,7 @@ async function loadMacro() {
       const sparkEl = div.querySelector('.spark');
       const vals = sparkData.map(p => p.value);
       const color = (c.change || 0) >= 0 ? '#ef4444' : '#22c55e';
-      const inst = echarts.init(sparkEl, null, { renderer: 'canvas' });
-      inst.setOption(sparkOption(vals, color));
+      initSpark(sparkEl, sparkOption(vals, color));
     }
   } catch (e) {
     $('macro-grid').innerHTML = `<div style="color:#ef4444;">❌ ${e.message}</div>`;
@@ -376,8 +383,7 @@ async function loadETF() {
       const vals = ts.map(r => r.shares);
       const last = ts[ts.length - 1], first = ts[0];
       const color = last && first && last.shares >= first.shares ? '#ef4444' : '#22c55e';
-      const inst = echarts.init(sparkEl, null, { renderer: 'canvas' });
-      inst.setOption(sparkOption(vals, color));
+      initSpark(sparkEl, sparkOption(vals, color));
     }
   } catch (e) {
     $('etf-tbody').innerHTML = `<tr><td colspan="12" style="text-align:center;color:#ef4444;">❌ ${e.message}</td></tr>`;
@@ -599,10 +605,7 @@ async function backfillIndex(symbol) {
 async function removeIndex(symbol) {
   if (!confirm(`删除 ${symbol} 池 + 缓存?`)) return;
   try {
-    await fetchJSON('/api/index/cache/remove', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
-    });
+    await fetchJSON(`/api/index/remove?symbol=${encodeURIComponent(symbol)}`, { method: 'DELETE' });
     renderIndexList();
   } catch (e) { alert(`失败: ${e.message}`); }
 }

@@ -165,13 +165,27 @@ class IndexService:
 
     # ── days + agg 聚合 (spec §6.1: /api/index/data) ──────────
     async def get_data(self, days: int = 20, agg: str = "day", symbol: str | None = None) -> list[dict[str, Any]]:
-        """返回最近 N 天 K线, 按 agg 聚合 (day=原样, week=周五, month=月末)。"""
+        """返回最近 N 天 K线, 按 agg 聚合 (day=原样, week=周五, month=月末)。
+        ponytail: cache-first, 不足时再 network fetch.
+        """
         from datetime import date, timedelta
         freq = {"day": "d", "week": "w", "month": "m"}.get(agg, "d")
         if symbol is None:
             return []
+        conn = get_connection()
+        cached = conn.execute(
+            """SELECT date, open, high, low, close, volume FROM kline_cache
+               WHERE symbol = ? AND freq = 'd' ORDER BY date DESC LIMIT ?""",
+            (symbol, days),
+        ).fetchall()
+        if len(cached) >= days:
+            rows_asc = list(reversed(cached))[:days]
+            if freq == "d":
+                return [_row_to_dict(r) for r in rows_asc]
+            return _aggregate_rows(rows_asc, agg, days)
+        # cache miss / stale — 拉网络
         date_to = date.today()
-        date_from = date_to - timedelta(days=days * 3)  # 多拉 buffer
+        date_from = date_to - timedelta(days=days * 3)
         try:
             results = await self.registry.fetch_with_fallback(
                 "kline", date_from, date_to, freq=KLineFreq.DAILY, symbol=symbol,
