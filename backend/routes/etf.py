@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/etf", tags=["etf"])
 
 
 @router.get("/overview")
-async def get_overview(days: int = Query(30, ge=1, le=180)) -> dict:
+async def get_overview(days: int = Query(30, ge=1, le=1000)) -> dict:
     svc = ETFService()
     try:
         return await svc.get_overview(days=days)

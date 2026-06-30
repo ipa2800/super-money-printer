@@ -29,16 +29,16 @@ _logged_in: bool = False
 
 
 def _ensure_login() -> None:
+    """每次都重新 login — session 偶尔会被服务端断开, 缓存 _logged_in 会失真。
+    bs.login() 幂等且 ~10ms, 不值得缓存状态。
+    """
     global _logged_in
     with _login_lock:
-        if _logged_in:
-            return
-        # baostock 默认匿名登录 (无账号密码)
         lg = bs.login()
         if lg.error_code != "0":
+            _logged_in = False
             raise ProviderError("baostock", f"login failed: {lg.error_msg}")
         _logged_in = True
-        log.info("baostock logged in")
 
 
 def _ensure_logout() -> None:

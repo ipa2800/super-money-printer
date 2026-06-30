@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ponytail: 只放 Tailwind @apply 无法简洁表达的规则 — 8 行, 其他全部走 utility */
+html, body, #root { @apply h-full; }
+body { @apply bg-bg text-ink font-sans; }
+::-webkit-scrollbar       { @apply w-1.5 h-1.5; }
+::-webkit-scrollbar-track { @apply bg-line; }
+::-webkit-scrollbar-thumb { @apply bg-ink-dim rounded; }
+
+/* progress modal 的 log 行强调色 (Tailwind 没法按 .ok/.err 选择子 div 套颜色, 用 :where 简化) */
+.progress-log .line.ok  { @apply text-up; }
+.progress-log .line.err { @apply text-down; }
+
+/* 范围滑块的暗主题 (Tailwind 没覆盖) */
+input[type="range"] { @apply accent-accent; }
+
+/* 表格底纹, 防止 Tailwind hover 不可见 */
+.data-table tbody tr:hover { @apply bg-white/[0.03]; }

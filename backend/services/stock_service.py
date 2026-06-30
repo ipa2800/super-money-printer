@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -62,12 +63,25 @@ class StockService:
 
     # ── 单股数据 ─────────────────────────────────────────────
     async def get_kline(self, code: str, freq: str = "d", limit: int = 60) -> list[dict[str, Any]]:
-        """BaostockProvider 拉日/周/月 K线。code 接受 'sh.600000' 或 '600000'。"""
+        """BaostockProvider 拉日/周/月 K线。code 接受 'sh.600000' 或 '600000'。cache-first。"""
         freq_map = {"d": KLineFreq.DAILY, "w": KLineFreq.WEEKLY, "m": KLineFreq.MONTHLY}
         f = freq_map.get(freq)
         if f is None:
             raise ValueError(f"freq must be d/w/m, got {freq!r}")
         symbol = _a_share_symbol(code)
+
+        # ponytail: cache-first, 命中阈值 ≥ 5 行才认为有效
+        conn = get_connection()
+        cached = conn.execute(
+            """SELECT date, open, high, low, close, volume, amount, turnover, source
+               FROM kline_cache WHERE symbol = ? AND freq = ?
+               ORDER BY date DESC LIMIT ?""",
+            (symbol, freq, limit),
+        ).fetchall()
+        if len(cached) >= min(limit, 5):
+            return [_row_to_dict(r) for r in reversed(cached)]
+
+        # 未命中 → 拉网络
         date_to = date.today()
         date_from = date_to - timedelta(days=limit * 3)
         results = await self.registry.fetch_with_fallback(
@@ -147,6 +161,98 @@ class StockService:
             "float_cap": float(r.get("流通市值", 0) or 0),
         }
 
+    # ── 实时 / 分时 ────────────────────────────────────────────
+    @staticmethod
+    async def get_realtime_batch(codes: list[str]) -> dict[str, dict[str, Any]]:
+        """Sina hq.sinajs.cn 批量拉实时报价 (单 HTTP, 多 code 逗号拼接)。
+        code 接受 '000001' 或 'sz.000001', 自动补前缀。
+        返回: {code: {name, open, prev_close, price, high, low, volume, amount, change, change_pct, time}}
+        """
+        import httpx
+        if not codes:
+            return {}
+        syms = [_sina_symbol(c) for c in codes]
+        url = "https://hq.sinajs.cn/list=" + ",".join(syms)
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(url, headers={"Referer": "https://finance.sina.com.cn"})
+            r.raise_for_status()
+        except Exception as e:
+            log.warning(f"[realtime] fetch failed: {e}")
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for sym, raw in re.findall(r'hq_str_([a-z0-9.]+)="([^"]*)";?', r.text):
+            if not raw:
+                continue
+            fields = raw.split(",")
+            if len(fields) < 32:
+                continue
+            try:
+                # Sina 符号 sz000001 无点; baostock 风格 sz.000001 兼容
+                code6 = sym.split(".", 1)[1] if "." in sym else sym[2:]
+                open_ = float(fields[1]) or 0
+                prev = float(fields[2]) or 0
+                cur = float(fields[3]) or 0
+                high = float(fields[4]) or 0
+                low = float(fields[5]) or 0
+                vol = float(fields[8]) or 0
+                amt = float(fields[9]) or 0
+                change = cur - prev
+                pct = (change / prev * 100) if prev else 0
+                out[code6] = {
+                    "code": code6,
+                    "name": fields[0],
+                    "open": open_,
+                    "prev_close": prev,
+                    "price": cur,
+                    "high": high,
+                    "low": low,
+                    "volume": vol,
+                    "amount": amt,
+                    "change": round(change, 4),
+                    "change_pct": round(pct, 3),
+                    "time": f"{fields[30]} {fields[31]}",
+                }
+            except (ValueError, IndexError) as e:
+                log.debug(f"[realtime {sym}] parse skip: {e}")
+        return out
+
+    @staticmethod
+    async def get_minute(code: str) -> list[dict[str, Any]]:
+        """Tencent web.ifzq 分时: 返回 240+ 个 1 分钟 bar (HHMM price volume amount)。
+        ponytail: 1 次 HTTP 拿全天, 平均价 = amount / volume * 100 (vol 单位是手)。
+        """
+        import httpx
+        sym = _sina_symbol(code)
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={_sina_symbol(code)}"
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            log.warning(f"[minute {code}] fetch failed: {e}")
+            return []
+        try:
+            raw = data["data"][sym]["data"]["data"]
+        except (KeyError, TypeError):
+            return []
+        rows: list[dict[str, Any]] = []
+        for line in raw:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            t, price, vol, amt = parts[0], parts[1], parts[2], parts[3]
+            try:
+                p = float(price)
+                v = float(vol)
+                a = float(amt)
+                avg = (a / (v * 100)) if v else p  # vol 单位手, 1 手 = 100 股
+                rows.append({"time": t, "price": p, "volume": v, "amount": a, "avg_price": round(avg, 3)})
+            except ValueError:
+                continue
+        return rows
+
     @staticmethod
     def get_news(code: str, limit: int = 10) -> list[dict[str, Any]]:
         """akshare stock_news_em — 10 条。"""
@@ -173,3 +279,12 @@ def _a_share_symbol(code: str) -> str:
     if code.startswith(("60", "688", "9")):
         return f"sh.{code}"
     return f"sz.{code}"
+
+
+def _sina_symbol(code: str) -> str:
+    """A 股代码 → Sina/Tencent 格式 (sh600000 / sz000001, 紧贴无点)。"""
+    if "." in code:
+        return code.replace(".", "")
+    if code.startswith(("60", "688", "9")):
+        return f"sh{code}"
+    return f"sz{code}"

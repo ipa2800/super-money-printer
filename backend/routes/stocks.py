@@ -71,3 +71,25 @@ async def news(code: str, limit: int = Query(10, ge=1, le=50)) -> dict:
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {"code": code, "count": len(rows), "news": rows}
+
+
+@router.get("/realtime")
+async def realtime_batch(codes: str = Query("", description="comma-separated codes, empty = pool")) -> dict:
+    """批量实时报价 (Sina)。空 codes → 拉整个 stock_pool。"""
+    if codes.strip():
+        code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    else:
+        code_list = [s["code"] for s in StockService.list_pool()]
+    if not code_list:
+        return {"as_of": "", "items": {}}
+    items = await svc.get_realtime_batch(code_list)
+    return {"as_of": next(iter(items.values()), {}).get("time", ""), "items": items}
+
+
+@router.get("/{code}/minute")
+async def minute(code: str) -> dict:
+    """分时数据 (Tencent), 240 个 1 分钟 bar。"""
+    rows = await svc.get_minute(code)
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"minute data not available for {code}")
+    return {"code": code, "count": len(rows), "data": rows}
