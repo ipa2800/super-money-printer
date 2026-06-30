@@ -1,0 +1,35 @@
+# 合并配置 — Phase 1.5 接入 AkShare 时拆 providers.yaml / alerts.yaml
+server:
+  host: "0.0.0.0"
+  port: 6000
+
+database:
+  path: "./etf_data.db"
+  wal_mode: true
+
+# 数据源配置: provider_id -> { priority, enabled, kwargs }
+providers:
+  baostock:
+    priority: 1
+    enabled: true
+    kwargs: {}
+
+# 预警阈值 (Phase 1 暂不消费)
+alerts:
+  etf:
+    single_day_threshold: 30
+    three_day_total_threshold: 20
+    volume_ratio_threshold: 2.0
+
+# 默认追踪标的 (Phase 1 暂不消费)
+tracking:
+  etfs: []
+  indexes:
+    - code: "sh.000300"
+      name: "沪深300"
+    - code: "sh.000001"
+      name: "上证指数"
+    - code: "sz.399006"
+      name: "创业板指"
+    - code: "sh.000905"
+      name: "中证500"
