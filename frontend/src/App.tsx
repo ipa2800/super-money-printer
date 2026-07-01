@@ -9,6 +9,7 @@ import { ThermometerTab } from "./tabs/ThermometerTab";
 import { DecisionTab } from "./tabs/DecisionTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { StocksTab } from "./tabs/StocksTab";
+import { SectorTab } from "./tabs/SectorTab";
 import { CustomRangeModal } from "./components/CustomRangeModal";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useStore, store } from "./store";
@@ -56,6 +57,7 @@ function renderTab(tab: string) {
     case "decision":    return <DecisionTab />;
     case "settings":    return <SettingsTab />;
     case "stocks":      return <StocksTab />;
+    case "sector":      return <SectorTab />;
     case "dashboard":
     default:            return <DashboardTab />;
   }

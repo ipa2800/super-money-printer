@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from backend.db.connection import get_connection
@@ -251,6 +251,12 @@ class StockService:
                 rows.append({"time": t, "price": p, "volume": v, "amount": a, "avg_price": round(avg, 3)})
             except ValueError:
                 continue
+        # ponytail: Tencent API 永远返回"进行中"那根 bar, 比 wall clock 晚 0-60s.
+        # 只在交易时段 (09:30-15:00) 截断到当前分钟; 午间/盘后/盘前原样
+        now = datetime.now()
+        hhmm_now = f"{now.hour:02d}{now.minute:02d}"
+        if "0930" <= hhmm_now <= "1500":
+            rows = [r for r in rows if r["time"] <= hhmm_now]
         return rows
 
     @staticmethod

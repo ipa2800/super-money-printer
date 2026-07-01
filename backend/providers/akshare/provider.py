@@ -97,6 +97,7 @@ class AkShareProvider(BaseProvider):
     supported_indicators: set[str] = field(default_factory=lambda: {
         "mainflow", "bond_10y", "shibor_on", "usd_cny",
         "pmi_mfg", "m2", "cpi", "lpr", "etf_realtime",
+        "kline",
     })
 
     _last_success: Optional[datetime] = None
@@ -121,6 +122,8 @@ class AkShareProvider(BaseProvider):
     ) -> list[FetchResult]:
         if indicator == "etf_realtime":
             return await self._fetch_etf_realtime()
+        if indicator == "kline":
+            return await self._fetch_kline(symbol, date_from, date_to, freq)
         if indicator not in INDICATOR_FNS:
             raise DataNotAvailableError(self.name, f"unsupported indicator: {indicator}")
 
@@ -236,6 +239,64 @@ class AkShareProvider(BaseProvider):
                     raw_data=row.to_dict(),
                 )
             )
+        return results
+
+    async def _fetch_kline(
+        self,
+        symbol: Optional[str],
+        date_from: date,
+        date_to: date,
+        freq: Optional[KLineFreq],
+    ) -> list[FetchResult]:
+        """ETF K线 fallback — Sina 完整历史, 补 Baostock 只有 6 个月的缺口。
+        symbol: baostock 格式 'sh.510500' → 内部转 sina 'sh510500'。
+        只支持 ETF (基金代码), 指数/股票 symbol 不在 fund_etf_hist_sina 范围内, raise 让 registry 试下一个 provider。
+        """
+        if not symbol:
+            raise DataNotAvailableError(self.name, "kline fetch requires symbol")
+        sina_symbol = symbol.replace(".", "")
+        # 只处理基金代码 (5/1 开头), 其它交给下一个 provider
+        code = sina_symbol[2:] if len(sina_symbol) > 2 else sina_symbol
+        if not (code.startswith("5") or code.startswith("1")):
+            raise DataNotAvailableError(self.name, f"akshare kline only handles fund codes, got {symbol}")
+
+        ak = _ensure_akshare()
+        loop = asyncio.get_running_loop()
+        df = await loop.run_in_executor(None, ak.fund_etf_hist_sina, sina_symbol)
+        if df is None or df.empty:
+            raise DataNotAvailableError(self.name, f"fund_etf_hist_sina empty for {sina_symbol}")
+
+        results: list[FetchResult] = []
+        for _, row in df.iterrows():
+            d = self._parse_date(row.get("date"), "kline")
+            if d is None or d < date_from or d > date_to:
+                continue
+            try:
+                results.append(
+                    FetchResult(
+                        indicator="kline",
+                        date=d,
+                        source=self.name,
+                        symbol=symbol,
+                        freq=freq,
+                        fields={
+                            "open":   float(row["open"]),
+                            "high":   float(row["high"]),
+                            "low":    float(row["low"]),
+                            "close":  float(row["close"]),
+                            "volume": float(row["volume"]) if row.get("volume") else None,
+                            "amount": float(row["amount"]) if row.get("amount") else None,
+                            # ponytail: fund_etf_hist_sina 不取换手率, 统一字段契约 (baostock/tushare 都有 turn 键)
+                            "turn":   None,
+                        },
+                        fetched_at=datetime.now(),
+                        raw_data=row.to_dict(),
+                    )
+                )
+            except (ValueError, KeyError, TypeError):
+                continue
+        if not results:
+            raise DataNotAvailableError(self.name, f"no rows for {symbol} in {date_from}..{date_to}")
         return results
 
     def health_check(self) -> HealthReport:

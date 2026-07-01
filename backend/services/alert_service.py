@@ -116,6 +116,53 @@ class AlertService:
         n_etf = self.check_etf_shares()
         return {"macro_alerts": n_macro, "etf_alerts": n_etf}
 
+    # ── 板块分析规则 (l5_sector_analytics 调用) ──
+    # 主升浪: RPS_20 >= 80 且 加速度 > 0 (强 + 加速)
+    # 资金异常流入: 资金流分位 >= 90 (近20日新高)
+    # 龙头确立: 龙头连板 >= 3 且 涨停密度 >= 20%
+    async def run_sector_rules(self) -> dict[str, int]:
+        """扫 sector_analytics 当日, 触发规则写 alert_records.
+        返回 {'main_wave': N, 'flow_anomaly': M, 'leader': K}"""
+        from datetime import datetime
+        conn = get_connection()
+        rows = conn.execute(
+            """SELECT a.code, a.type, s.name,
+                      a.rps_20, a.accel_5_20, a.net_flow_rank,
+                      a.max_continuous, a.limit_up_density
+               FROM sector_analytics a
+               LEFT JOIN sector_cache s ON a.code=s.code AND a.type=s.type
+               WHERE a.date = date('now')"""
+        ).fetchall()
+        n_main = n_flow = n_leader = 0
+        for r in rows:
+            sym = f"{r['type']}:{r['code']}"
+            name = r["name"] or sym
+            # 规则 1: 主升浪
+            if (r["rps_20"] or 0) >= 80 and (r["accel_5_20"] or 0) > 0:
+                _insert_alert(
+                    "sector_main_wave", "yellow", sym,
+                    f"主升浪启动: {name} RPS={r['rps_20']:.0f} 加速度={r['accel_5_20']:.2f}",
+                    f"code={r['code']} type={r['type']}",
+                )
+                n_main += 1
+            # 规则 2: 资金异常流入
+            if (r["net_flow_rank"] or 0) >= 90:
+                _insert_alert(
+                    "sector_flow_anomaly", "yellow", sym,
+                    f"资金异常流入: {name} 净流入分位={r['net_flow_rank']:.0f}/100",
+                    f"code={r['code']} type={r['type']}",
+                )
+                n_flow += 1
+            # 规则 3: 龙头确立
+            if (r["max_continuous"] or 0) >= 3 and (r["limit_up_density"] or 0) >= 0.20:
+                _insert_alert(
+                    "sector_leader_set", "red", sym,
+                    f"龙头确立: {name} 龙头{r['max_continuous']}连板 涨停密度={r['limit_up_density']*100:.1f}%",
+                    f"code={r['code']} type={r['type']}",
+                )
+                n_leader += 1
+        return {"main_wave": n_main, "flow_anomaly": n_flow, "leader": n_leader}
+
     @staticmethod
     def list_alerts(limit: int = 50, only_unack: bool = False) -> list[dict]:
         conn = get_connection()

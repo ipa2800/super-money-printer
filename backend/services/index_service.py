@@ -56,7 +56,7 @@ class IndexService:
             """,
             (symbol, freq, limit),
         ).fetchall()
-        if len(cached) >= min(limit, 5):  # 命中阈值: 至少 5 行才认为有效
+        if len(cached) >= limit:  # 缓存行数够 limit 条才直接返回, 否则补拉
             return [_row_to_dict(r) for r in reversed(cached)]
 
         # ── 未命中 → 拉网络 ──

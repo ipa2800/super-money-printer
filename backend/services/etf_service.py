@@ -89,8 +89,14 @@ class ETFService:
             for _, r in df.head(50).iterrows()
         ]
 
-    async def get_overview(self, days: int = 30) -> dict[str, Any]:
-        """一次性返回: ETF 池 + 份额时序 + 实时行情。"""
+    async def get_overview(self, days: int = 30, agg: str = "day") -> dict[str, Any]:
+        """一次性返回: ETF 池 + 份额时序 + 成交量时序 + 实时行情。
+
+        agg: day=原样, week=每周末, month=每月末。
+        份额取桶内最后一行, 成交量取桶内总和。
+        """
+        from backend.services.index_service import _aggregate_rows
+
         pool = self.list_pool()
         # 1. 份额时序 (从 DB 优先)
         shares_ts = self._get_shares_from_db(pool, days)
@@ -101,15 +107,30 @@ class ETFService:
             await self._refresh_shares_from_network(days)
             shares_ts = self._get_shares_from_db(pool, days)
 
-        # 2. 实时行情 (从 DB 优先)
+        # 2. 成交量时序 (纯 DB, 没有就空)
+        volume_ts = self._get_volume_from_db(pool, days)
+
+        # 3. 实时行情 (从 DB 优先)
         realtime = self._get_realtime_from_db(pool)
         if not realtime:
             await self._refresh_realtime_from_network()
             realtime = self._get_realtime_from_db(pool)
 
+        # 4. 按 agg 聚合
+        if agg != "day":
+            shares_ts = {
+                code: _aggregate_rows(list(reversed(rows)), agg, days)
+                for code, rows in shares_ts.items()
+            }
+            volume_ts = {
+                code: _aggregate_volume_rows(list(reversed(rows)), agg, days)
+                for code, rows in volume_ts.items()
+            }
+
         return {
             "codes": [e["code"] for e in pool],
             "shares_timeseries": shares_ts,
+            "volume_timeseries": volume_ts,
             "realtime": realtime,
         }
 
@@ -147,6 +168,23 @@ class ETFService:
             rows = conn.execute(
                 """
                 SELECT date, shares FROM shares_cache
+                WHERE code = ?
+                ORDER BY date DESC
+                LIMIT ?
+                """,
+                (e["code"], days),
+            ).fetchall()
+            result[e["code"]] = [_row_to_dict(r) for r in reversed(rows)]
+        return result
+
+    def _get_volume_from_db(self, etfs: list[dict], days: int) -> dict[str, list]:
+        """成交量时序, 从 volume_cache 读最近 N 行 (按交易日期)。"""
+        conn = get_connection()
+        result = {}
+        for e in etfs:
+            rows = conn.execute(
+                """
+                SELECT date, volume FROM volume_cache
                 WHERE code = ?
                 ORDER BY date DESC
                 LIMIT ?
@@ -247,3 +285,31 @@ class ETFService:
                 (r.symbol, now_iso, json.dumps(data, default=str)),
             )
         conn.commit()
+
+
+def _aggregate_volume_rows(rows: list, agg: str, limit: int) -> list[dict[str, Any]]:
+    """成交量按桶求和: week=每周合计, month=每月合计, 其他=截尾原样。"""
+    from datetime import date as _date
+    if agg == "week":
+        buckets: dict[tuple[int, int], dict] = {}
+        for r in rows:
+            d = _date.fromisoformat(r["date"])
+            y, w, _ = d.isocalendar()
+            key = (y, w)
+            if key not in buckets:
+                buckets[key] = {"date": r["date"], "volume": 0.0}
+            buckets[key]["volume"] += float(r["volume"])
+        # 桶日期用桶内最后一行日期, 但保持按时间排序
+        out = sorted(buckets.values(), key=lambda x: x["date"])
+        return out[-limit:]
+    if agg == "month":
+        buckets2: dict[tuple[int, int], dict] = {}
+        for r in rows:
+            d = _date.fromisoformat(r["date"])
+            key = (d.year, d.month)
+            if key not in buckets2:
+                buckets2[key] = {"date": r["date"], "volume": 0.0}
+            buckets2[key]["volume"] += float(r["volume"])
+        out = sorted(buckets2.values(), key=lambda x: x["date"])
+        return out[-limit:]
+    return [{"date": r["date"], "volume": float(r["volume"])} for r in rows[-limit:]]

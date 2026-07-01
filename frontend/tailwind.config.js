@@ -10,6 +10,7 @@ export default {
         ink:   { DEFAULT: "#e2e8f0", soft: "#94a3b8", mute: "#64748b", dim: "#475569" },
         line:  { DEFAULT: "#1e293b", mid: "#334155" },
         up:    "#22c55e", down: "#ef4444", warn: "#eab308",
+        pos:   "#ef4444", neg: "#22c55e",              // A 股: 红涨绿跌 (区别于 up/down 语义)
         accent:{ DEFAULT: "#3b82f6", alt: "#8b5cf6", pink: "#ec4899" },
       },
       fontFamily: {

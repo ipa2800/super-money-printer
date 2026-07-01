@@ -9,10 +9,13 @@ router = APIRouter(prefix="/api/etf", tags=["etf"])
 
 
 @router.get("/overview")
-async def get_overview(days: int = Query(30, ge=1, le=1000)) -> dict:
+async def get_overview(
+    days: int = Query(30, ge=1, le=1000),
+    agg: str = Query("day", pattern="^(day|week|month)$"),
+) -> dict:
     svc = ETFService()
     try:
-        return await svc.get_overview(days=days)
+        return await svc.get_overview(days=days, agg=agg)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

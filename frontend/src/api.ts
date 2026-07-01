@@ -82,10 +82,11 @@ export const etf = {
   add:      (code: string, name: string) => jsonPost<{ ok: boolean }>("/api/etf/add", { code, name }),
   remove:   (code: string) => request<{ ok: boolean }>(`/api/etf/${code}`, { method: "DELETE" }),
   search:   (q: string) => request<{ results: ETFSearchResult[] }>(`/api/etf/search?q=${encodeURIComponent(q)}`),
-  overview: (days = 30) => request<{
+  overview: (days = 30, agg: Agg = "day") => request<{
     codes: string[]; shares_timeseries: Record<string, { date: string; shares: number }[]>;
+    volume_timeseries: Record<string, { date: string; volume: number }[]>;
     realtime: Record<string, ETFRealtime>;
-  }>(`/api/etf/overview?days=${days}`),
+  }>(`/api/etf/overview?days=${days}&agg=${agg}`),
 };
 // index
 export const indexApi = {
@@ -127,6 +128,58 @@ export const jobs = {
   patch: (id: string, body: { cron_expr?: string; enabled?: boolean; description?: string }) =>
     jsonPatch<{ ok: boolean }>(`/api/jobs/${id}`, body),
   log:   (id: string, limit = 10) => request<{ job_id: string; logs: JobLogEntry[] }>(`/api/jobs/${id}/log?limit=${limit}`),
+};
+// sector (板块/概念)
+export type SectorItem = {
+  code: string; type: "industry" | "concept"; name: string;
+  price: number | null; change: number | null; pct_chg: number | null;
+  total_mv: number | null; turnover: number | null;
+  up_count: number | null; down_count: number | null;
+  leader: string | null; leader_pct: number | null;
+};
+export type SectorHistoryRow = {
+  date: string; open: number; close: number; high: number; low: number;
+  volume: number | null; amount: number | null; pct_chg: number | null; change: number | null;
+};
+export const sector = {
+  snapshot: () => request<{ items: SectorItem[] }>("/api/sector/snapshot"),
+  history:  (symbol: string, days = 180, agg: Agg = "day") =>
+    request<{ symbol: string; rows: SectorHistoryRow[] }>(
+      `/api/sector/history?symbol=${encodeURIComponent(symbol)}&days=${days}&agg=${agg}`,
+    ),
+};
+
+// 板块分析 (4 维度排名 + 4 象限矩阵)
+export type SortBy = "rank_overall" | "rps_20" | "accel_5_20" | "net_flow_rank" | "limit_up_density";
+export type SectorAnalyticsRow = {
+  code: string; type: "industry" | "concept"; name: string | null;
+  leader: string | null; leader_pct: number | null; price: number | null;
+  // 动量
+  ret_1d: number | null; ret_5d: number | null; ret_10d: number | null;
+  ret_20d: number | null; ret_60d: number | null;
+  // 强度 / 加速度
+  rps_20: number | null; accel_5_20: number | null;
+  // 资金流
+  net_flow: number | null; net_flow_rank: number | null;
+  // 涨停
+  limit_up_count: number | null; constituents_count: number | null;
+  limit_up_density: number | null; max_continuous: number | null;
+  // 综合
+  rank_overall: number | null;
+};
+export type SectorMatrixQuadrant = "主升浪" | "顶部" | "反弹" | "杀跌";
+export type SectorMatrix = Record<SectorMatrixQuadrant, SectorAnalyticsRow[]>;
+export const sectorAnalytics = {
+  rank:   (params: { date?: string; sort_by?: SortBy; limit?: number; sector_type?: "industry" | "concept" } = {}) => {
+    const q = new URLSearchParams();
+    if (params.date) q.set("date", params.date);
+    if (params.sort_by) q.set("sort_by", params.sort_by);
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.sector_type) q.set("sector_type", params.sector_type);
+    return request<{ date: string; sort_by: SortBy; items: SectorAnalyticsRow[] }>(`/api/sector/analytics/rank?${q}`);
+  },
+  matrix: (date?: string) =>
+    request<{ date: string; matrix: SectorMatrix }>(`/api/sector/analytics/matrix${date ? `?date=${date}` : ""}`),
 };
 
 export { HttpError };

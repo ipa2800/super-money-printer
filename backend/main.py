@@ -13,10 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from backend.providers.akshare import AkShareProvider
 from backend.providers.baostock import BaostockProvider
 from backend.providers.registry import get_registry
+from backend.providers.sector import SectorProvider, SectorBackupProvider
 from backend.providers.sse import SSEProvider
 from backend.providers.szse import SZSEProvider
 from backend.providers.tushare import TushareProvider
-from backend.routes import alerts, cache, etf, health, index, jobs, macro, stocks, ws
+from backend.routes import alerts, cache, etf, health, index, jobs, macro, sector, stocks, ws
 from backend.scheduler import get_scheduler
 
 logging.basicConfig(
@@ -47,13 +48,19 @@ async def lifespan(app: FastAPI):
     registry.register(AkShareProvider())
     registry.register(SSEProvider())
     registry.register(SZSEProvider())
+    registry.register(SectorProvider())
+    registry.register(SectorBackupProvider())
     # Tushare 可选 — 没 token 跳过
     import os as _os
     if _os.environ.get("TUSHARE_TOKEN", "").strip():
         registry.register(TushareProvider())
     else:
         log.info("tushare skipped (TUSHARE_TOKEN not set)")
-    await registry.bootstrap()
+    try:
+        await registry.bootstrap()
+    except Exception as e:
+        # 容忍个别 provider 启动失败 (baostock 网络问题) — 注册已成功, 数据拉取时才报错
+        log.warning(f"⚠️  provider bootstrap soft-fail: {e}")
 
     # 启动 scheduler
     scheduler = get_scheduler()
@@ -96,6 +103,7 @@ app.include_router(ws.router)
 app.include_router(alerts.router)
 app.include_router(cache.router)
 app.include_router(stocks.router)
+app.include_router(sector.router)
 
 
 @app.get("/api/config/alerts")

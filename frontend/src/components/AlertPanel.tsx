@@ -1,31 +1,49 @@
-// components/AlertPanel.tsx — 仪表盘顶部 4 状态告警摘要
+// components/AlertPanel.tsx — 仪表盘告警横向条 (单行, 可一键确认)
 import type { AlertSummary } from "../api";
+import { Icon } from "./icons";
 
-const S = (summary: AlertSummary) => {
-  if (summary.red > 0) return { c: "bg-err-grad border border-down/20", label: "🔴" };
-  if (summary.yellow > 0) return { c: "bg-warn-grad border border-warn/20", label: "🟡" };
-  return { c: "bg-ok-grad border border-up/20", label: "🟢" };
-};
-
-export function AlertPanel({ summary }: { summary: AlertSummary | null }) {
+export function AlertPanel({ summary, onAck }: { summary: AlertSummary | null; onAck?: (id: number) => void }) {
   if (!summary) return null;
-  const s = S(summary);
+  const { red, yellow, top } = summary;
+  const total = red + yellow;
+  const status = red > 0 ? "red" : yellow > 0 ? "yellow" : "ok";
+  const cls =
+    status === "red" ? "bg-err-grad border-l-4 border-down" :
+    status === "yellow" ? "bg-warn-grad border-l-4 border-warn" :
+    "bg-ok-grad border-l-4 border-up";
+  const dotCls = status === "red" ? "text-down" : status === "yellow" ? "text-warn" : "text-up";
+
   return (
-    <div className={`rounded-xl p-4 flex items-start gap-3 ${s.c}`}>
-      <span className="text-2xl">{s.label}</span>
-      <div className="flex-1 min-w-0">
-        <div className="font-semibold">{s.label} 告警</div>
-        <div className="text-xs text-ink-soft mt-1">
-          <span className={summary.red > 0 ? "text-down" : "text-ink-mute"}>{summary.red} 红</span>
-          <span className="mx-2">·</span>
-          <span className="text-ink-mute">{summary.yellow} 黄</span>
-          {summary.top.length > 0 && summary.top.map(a => (
-            <span key={a.id} className="text-ink-soft ml-2 truncate inline-block max-w-xs align-middle">
-              — [{a.severity === "red" ? "严重" : "警告"}] {a.message}
-            </span>
-          ))}
-        </div>
+    <div className={`rounded-lg pl-3 pr-4 py-2 flex items-center gap-3 text-sm ${cls}`}>
+      <Icon.Dot className={`w-4 h-4 ${dotCls}`} />
+      <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="font-semibold">
+          {status === "red" ? "严重" : status === "yellow" ? "警告" : "正常"}
+        </span>
+        {total > 0 ? (
+          <>
+            <span className={red ? "text-down font-semibold" : "text-ink-mute"}>{red} 红</span>
+            <span className="text-ink-mute">·</span>
+            <span className={yellow ? "text-warn font-semibold" : "text-ink-mute"}>{yellow} 黄</span>
+          </>
+        ) : (
+          <span className="text-ink-mute">无未确认告警</span>
+        )}
+        {top.length > 0 && (
+          <span className="text-ink-soft truncate min-w-0 flex-1">
+            — [{top[0].severity === "red" ? "严重" : "警告"}] {top[0].message}
+          </span>
+        )}
       </div>
+      {onAck && top.length > 0 && (
+        <button
+          onClick={() => onAck(top[0].id)}
+          className="shrink-0 text-xs px-3 py-1 rounded bg-line hover:bg-line-mid border border-line-mid inline-flex items-center gap-1.5"
+        >
+          <Icon.Check className="w-3 h-3" />
+          确认
+        </button>
+      )}
     </div>
   );
 }

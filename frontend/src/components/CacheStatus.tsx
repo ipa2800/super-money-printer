@@ -1,12 +1,19 @@
 // components/CacheStatus.tsx — 缓存状态表 (4 状态: success/stale/never/failed)
 import { useEffect, useState } from "react";
 import { cache, type CacheItem } from "../api";
+import { Icon } from "./icons";
 
 const LABEL: Record<string, string> = {
-  success: "✓ 正常", stale: "⏰ 过期", never: "⊘ 无数据", failed: "✗ 失败",
+  success: "正常", stale: "过期", never: "无数据", failed: "失败",
+};
+const ICON: Record<string, React.ReactNode> = {
+  success: <Icon.Check className="w-3 h-3" />,
+  stale:   <Icon.Warning className="w-3 h-3" />,
+  failed:  <Icon.X className="w-3 h-3" />,
+  never:   null,
 };
 const CLS: Record<string, string> = {
-  success: "text-up", stale: "text-ink-mute", never: "text-ink-mute", failed: "text-down",
+  success: "text-up", stale: "text-warn", never: "text-ink-mute", failed: "text-down",
 };
 
 export function CacheStatus() {
@@ -25,7 +32,7 @@ export function CacheStatus() {
     } catch (e: unknown) { alert(`失败: ${(e as Error).message}`); }
   };
 
-  if (err) return <div className="text-down text-sm">❌ {err}</div>;
+  if (err) return <div className="text-down text-sm inline-flex items-center gap-1.5"><Icon.XCircle className="w-4 h-4" />{err}</div>;
 
   return (
     <div className="bg-card-grad border border-white/[0.06] rounded-xl overflow-x-auto">
@@ -39,7 +46,9 @@ export function CacheStatus() {
           ) : items.map(it => (
             <tr key={`${it.scope}/${it.key}`} className="border-b border-white/[0.03]">
               <td className="px-3 py-2"><code>{it.key}</code> <span className="text-ink-mute text-[10px] ml-1">{it.scope}</span></td>
-              <td className={`px-3 py-2 ${CLS[it.status] ?? "text-ink-mute"}`}>{LABEL[it.status] ?? it.status}</td>
+              <td className={`px-3 py-2 ${CLS[it.status] ?? "text-ink-mute"}`}>
+                <span className="inline-flex items-center gap-1">{ICON[it.status]}{LABEL[it.status] ?? it.status}</span>
+              </td>
               <td className="px-3 py-2 text-ink-soft text-[11px]">{it.last_success ?? "-"}</td>
               <td className="px-3 py-2 text-ink-soft">{it.ttl_seconds}</td>
               <td className="px-3 py-2">{it.row_count}</td>

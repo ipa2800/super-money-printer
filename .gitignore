@@ -37,3 +37,4 @@ logs/
 # frontend (no node_modules yet, defensive)
 node_modules/
 dist/
+.vite/

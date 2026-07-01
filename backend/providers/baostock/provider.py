@@ -31,14 +31,24 @@ _logged_in: bool = False
 def _ensure_login() -> None:
     """每次都重新 login — session 偶尔会被服务端断开, 缓存 _logged_in 会失真。
     bs.login() 幂等且 ~10ms, 不值得缓存状态。
+    ponytail: 包 socket 默认 timeout=3, 防止 server 不响应时永久挂起.
     """
     global _logged_in
-    with _login_lock:
-        lg = bs.login()
-        if lg.error_code != "0":
-            _logged_in = False
-            raise ProviderError("baostock", f"login failed: {lg.error_msg}")
-        _logged_in = True
+    import socket
+    old_to = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(3)
+    try:
+        with _login_lock:
+            lg = bs.login()
+            if lg.error_code != "0":
+                _logged_in = False
+                raise ProviderError("baostock", f"login failed: {lg.error_msg}")
+            _logged_in = True
+    except (socket.timeout, TimeoutError, OSError) as e:
+        _logged_in = False
+        raise ProviderError("baostock", f"login timeout: {e}") from e
+    finally:
+        socket.setdefaulttimeout(old_to)
 
 
 def _ensure_logout() -> None:
@@ -65,7 +75,12 @@ class BaostockProvider(BaseProvider):
 
     # ── 生命周期 ──
     def login(self) -> None:
-        _ensure_login()
+        # ponytail: 网络故障时 login() 抛错会让整个 bootstrap 失败, 改成 soft-fail (有请求时才报错)
+        try:
+            _ensure_login()
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning(f"[baostock] login soft-fail: {e}")
 
     def logout(self) -> None:
         _ensure_logout()

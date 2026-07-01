@@ -1,8 +1,10 @@
 // components/StockDetail.tsx — 自选股详情 (分时/K线/资金流/新闻 四 tab)
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { stock, type KLineRow, type MinuteBar, type StockRealtime } from "../api";
 import { KLineChart } from "./KLineChart";
 import { MinuteChart } from "./MinuteChart";
+import { Icon } from "./icons";
+import { useAutoRefresh } from "../hooks/useAutoRefresh";
 
 type FlowRow = { date: string; main_net: number; super_net: number; big_net: number; mid_net: number; small_net: number };
 type News = { title: string; url: string; time?: string; source?: string };
@@ -22,13 +24,18 @@ export function StockDetail({ code, realtime, onClose }: { code: string; realtim
   const change = rt?.change;
   const changePct = rt?.change_pct;
   const up = (changePct ?? 0) >= 0;
-  const colorCls = rt ? (up ? "text-up" : "text-down") : "text-ink";
+  const colorCls = rt ? (up ? "text-pos" : "text-neg") : "text-ink";
 
   useEffect(() => {
     setErr(null);
     setMinute([]);
     stock.minute(code).then(r => setMinute(r.data)).catch(() => setMinute([]));
   }, [code]);
+  // 分时图随交易时段自动滚动 (5s / 收盘前 3s)
+  const fetchMinute = useCallback(() => {
+    stock.minute(code).then(r => setMinute(r.data)).catch(() => {});
+  }, [code]);
+  useAutoRefresh(fetchMinute, [fetchMinute]);
 
   useEffect(() => {
     setKline([]);
@@ -66,15 +73,15 @@ export function StockDetail({ code, realtime, onClose }: { code: string; realtim
         )}
       </div>
 
-      {err && <div className="text-down text-sm mb-3">⚠ {err}</div>}
+      {err && <div className="text-down text-sm mb-3 inline-flex items-center gap-1.5"><Icon.Warning className="w-4 h-4" />{err}</div>}
 
       {/* 关键数据网格 (主流软件布局) */}
       {rt && (
         <div className="grid grid-cols-4 gap-3 mb-4 text-xs">
-          <KV label="今开" v={rt.open.toFixed(2)} colorCls={rt.open >= rt.prev_close ? "text-up" : "text-down"} />
+          <KV label="今开" v={rt.open.toFixed(2)} colorCls={rt.open >= rt.prev_close ? "text-pos" : "text-neg"} />
           <KV label="昨收" v={rt.prev_close.toFixed(2)} colorCls="" />
-          <KV label="最高" v={rt.high.toFixed(2)} colorCls="text-up" />
-          <KV label="最低" v={rt.low.toFixed(2)} colorCls="text-down" />
+          <KV label="最高" v={rt.high.toFixed(2)} colorCls="text-pos" />
+          <KV label="最低" v={rt.low.toFixed(2)} colorCls="text-neg" />
           <KV label="成交量" v={fmtVol(rt.volume)} colorCls="" />
           <KV label="成交额" v={fmtVol(rt.amount)} colorCls="" />
           <KV label="涨跌额" v={(rt.change >= 0 ? "+" : "") + rt.change.toFixed(2)} colorCls={colorCls} />
@@ -99,7 +106,7 @@ export function StockDetail({ code, realtime, onClose }: { code: string; realtim
       {/* Tab 内容 */}
       {tab === "minute" && (
         <div className="bg-card-grad border border-white/[0.06] rounded-xl p-4">
-          {minute.length === 0 ? <div className="text-ink-mute text-center py-6">暂无分时数据 (非交易时段)</div> : <MinuteChart data={minute} />}
+          {minute.length === 0 ? <div className="text-ink-mute text-center py-6">暂无分时数据 (非交易时段)</div> : <MinuteChart data={minute} prev_close={rt?.prev_close} />}
         </div>
       )}
 
@@ -120,7 +127,7 @@ export function StockDetail({ code, realtime, onClose }: { code: string; realtim
                 flow.map((f, i) => (
                   <tr key={i} className="border-b border-white/[0.03]">
                     <td className="px-3 py-2">{f.date}</td>
-                    <td className={`px-3 py-2 ${f.main_net >= 0 ? "text-up" : "text-down"}`}>{(f.main_net / 1e8).toFixed(2)} 亿</td>
+                    <td className={`px-3 py-2 ${f.main_net >= 0 ? "text-pos" : "text-neg"}`}>{(f.main_net / 1e8).toFixed(2)} 亿</td>
                     <td className="px-3 py-2">{(f.super_net / 1e8).toFixed(2)} 亿</td>
                     <td className="px-3 py-2">{(f.big_net / 1e8).toFixed(2)} 亿</td>
                     <td className="px-3 py-2">{(f.mid_net / 1e8).toFixed(2)} 亿</td>

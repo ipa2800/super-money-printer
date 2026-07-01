@@ -137,12 +137,51 @@ async def job_l3_evening() -> str:
     return ", ".join(summary)
 
 
+# ── L4 板块/概念: 启动时 snapshot + 02:30 全量历史 ──────────────────
+async def job_l4_sector() -> str:
+    """板块/概念: 刷新快照 + 全量历史 (隔夜跑, ~380 boards × 0.3s ≈ 2 min)."""
+    log.info("[L4] sector start")
+    from backend.services.sector_service import SectorService
+    svc = SectorService()
+
+    n_snap = await svc.refresh_snapshot()
+    if n_snap == 0:
+        return "snapshot fetch failed"
+
+    # 全量历史 (cache 里现有的所有 code+type)
+    ok = await svc.refresh_all_history(delay_sec=0.3)
+    log.info(f"[L4] sector done: snapshot={n_snap} history={ok}")
+    return f"snapshot={n_snap} history={ok}"
+
+
+# ── L5 板块分析: 收市后算 RPS/资金流/涨停密度 (工作日 16:30) ─────────
+async def job_l5_sector_analytics() -> str:
+    """板块分析: 拉资金流 + 成分股 + 涨停池, 算指标写 sector_analytics.
+    跑完后调用 alert 规则 (主升浪/资金异常/龙头确立) 推到 alert 中心."""
+    log.info("[L5] sector_analytics start")
+    from backend.services.sector_analytics_service import SectorAnalyticsService
+    svc = SectorAnalyticsService()
+    summary = await svc.refresh_all()
+    log.info(f"[L5] sector_analytics refresh done: {summary}")
+
+    # 跑 alert 规则
+    try:
+        from backend.services.alert_service import AlertService
+        await AlertService().run_sector_rules()
+    except Exception as e:
+        log.warning(f"[L5] alert rules failed: {e}")
+
+    return f"fund_flow={summary['fund_flow']} cons={summary['constituents_industry']}/{summary['constituents_concept']} lup={summary['limit_up_pool']} analytics={summary['analytics']}"
+
+
 # ── Job → handler 映射 ───────────────────────────────────────────────
 JOB_HANDLERS = {
     "l0_realtime": job_l0_realtime,
     "l1_daily":    job_l1_daily,
     "l2_monthly":  job_l2_monthly,
     "l3_evening":  job_l3_evening,
+    "l4_sector":   job_l4_sector,
+    "l5_sector_analytics": job_l5_sector_analytics,
 }
 
 

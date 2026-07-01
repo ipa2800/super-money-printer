@@ -104,6 +104,8 @@ class TushareProvider(BaseProvider):
                             "close":  float(row["close"]),
                             "volume": float(row.get("vol", 0) or 0),
                             "amount": float(row.get("amount", 0) or 0) if "amount" in row.index else None,
+                            # ponytail: tushare 不返回换手率, 统一字段契约 — baostock/akshare 都有 turn 键, None 表无数据
+                            "turn":   None,
                         },
                         fetched_at=datetime.now(),
                         raw_data=row.to_dict(),
