@@ -67,6 +67,26 @@ export const alerts = {
   check:   () => jsonPost<{ triggered: number }>("/api/alerts/check"),
   ack:     (id: number) => jsonPost<{ ok: boolean }>(`/api/alerts/${id}/ack`),
 };
+// data log
+export type DataLogItem = {
+  id: number; ts: string; layer: string; source: string; operation: string | null;
+  status: string; level: string; latency_ms: number | null; rows: number | null; error: string | null;
+};
+export type DataLogStats = { hours: number; since: string; sources: Record<string, { ok: number; fail: number; avg_ms: number }> };
+export const dataLog = {
+  list:   (p: { source?: string; status?: string; layer?: string; q?: string; limit?: number; offset?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (p.source) q.set("source", p.source);
+    if (p.status) q.set("status", p.status);
+    if (p.layer)  q.set("layer", p.layer);
+    if (p.q)      q.set("q", p.q);
+    if (p.limit != null) q.set("limit", String(p.limit));
+    if (p.offset != null) q.set("offset", String(p.offset));
+    return request<{ total: number; items: DataLogItem[] }>(`/api/data/log?${q}`);
+  },
+  stats:  (hours = 24) => request<DataLogStats>(`/api/data/log/stats?hours=${hours}`),
+  delete: (before: string) => request<{ deleted: number }>(`/api/data/log?before=${encodeURIComponent(before)}`, { method: "DELETE" }),
+};
 // cache
 export const cache = {
   status:   () => request<{ now: string; items: CacheItem[] }>("/api/cache/status"),

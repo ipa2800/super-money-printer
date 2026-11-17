@@ -105,4 +105,10 @@ export const Icon = {
     "M14 14h7v7h-7z",
     "M3 14h7v7H3z",
   ], p),
+  Log: (p?: Props) => svgPaths([
+    "M4 6h16",
+    "M4 12h10",
+    "M4 18h16",
+    "M16 14l4 4-4 4",
+  ], p),
 };

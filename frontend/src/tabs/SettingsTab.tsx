@@ -5,22 +5,31 @@ import { CacheStatus } from "../components/CacheStatus";
 import { PoolList, type PoolItem } from "../components/PoolList";
 import { JobList } from "../components/JobList";
 import { CronDrawer } from "../components/CronDrawer";
+import { DataLogTab } from "../components/DataLogTab";
+import { Icon } from "../components/icons";
 
 type ETFSearch = { code: string; name: string };
 
 export function SettingsTab() {
-  const [sub, setSub] = useState<"data" | "schedule">("data");
+  const [sub, setSub] = useState<"data" | "log" | "schedule">("data");
   const [editing, setEditing] = useState<{ id: string; cron: string } | null>(null);
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1 border-b border-line overflow-x-auto">
-        {([["data","📦 数据管理"],["schedule","⏱ 刷新计划"]] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setSub(k)} className={`px-4 py-2 text-sm rounded-t whitespace-nowrap ${sub === k ? "bg-accent text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+        {([
+          ["data",     "数据管理", Icon.Cog],
+          ["log",      "数据日志", Icon.Log],
+          ["schedule", "刷新计划", Icon.Refresh],
+        ] as const).map(([k, l, Ic]) => (
+          <button key={k} onClick={() => setSub(k)} className={`px-4 py-2 text-sm rounded-t whitespace-nowrap inline-flex items-center gap-1.5 ${sub === k ? "bg-accent text-white" : "text-ink-soft hover:text-ink"}`}>
+            {Ic && <Ic size={14} />}{l}
+          </button>
         ))}
       </div>
 
       {sub === "data" && <DataMgmt />}
+      {sub === "log" && <DataLogTab />}
       {sub === "schedule" && (
         <>
           <JobList

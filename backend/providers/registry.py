@@ -77,11 +77,15 @@ class ProviderRegistry:
         symbol: Optional[str] = None,
     ) -> list[FetchResult]:
         """按 priority 顺序试各 provider, 合并结果 (同 (indicator,date) 保留先到的)。"""
+        from backend.utils.datalog import log_call  # ponytail: 延迟导入避免循环
         results: dict[tuple, FetchResult] = {}
         errors: list[str] = []
+        op = f"fetch:{indicator}"
         for p in self.get_all(indicator):
             try:
-                fetched = await p.fetch(indicator, date_from, date_to, freq=freq, symbol=symbol)
+                with log_call("provider", p.name, op) as st:
+                    fetched = await p.fetch(indicator, date_from, date_to, freq=freq, symbol=symbol)
+                    st.set_rows(len(fetched))
                 for r in fetched:
                     key = (r.indicator, r.date, r.symbol or "")
                     if key not in results:
@@ -90,6 +94,7 @@ class ProviderRegistry:
                 errors.append(f"{p.name}: {e}")
                 continue
         if not results and errors:
+            # ponytail: 不再记 aggregate 'registry' 行 — 各 provider 失败已 log_call 记过
             raise ProviderError("registry", f"all providers failed: {'; '.join(errors)}")
         return list(results.values())
 

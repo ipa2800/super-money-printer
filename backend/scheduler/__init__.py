@@ -58,6 +58,15 @@ class AppScheduler:
                 id=j["job_id"], name=j["description"], replace_existing=True,
             )
             log.info(f"[scheduler] registered {j['job_id']} cron='{j['cron_expr']}'")
+        # ponytail: data_log 自动清理, 每天 03:15 — 不进 refresh_jobs (内部维护)
+        from backend.scheduler.jobs import job_cleanup_data_log
+        self.sched.add_job(
+            job_cleanup_data_log,
+            CronTrigger.from_crontab("15 3 * * *", timezone="Asia/Shanghai"),
+            id="cleanup_data_log", name="data_log 30 天滚动清理",
+            replace_existing=True,
+        )
+        log.info("[scheduler] registered cleanup_data_log cron='15 3 * * *'")
         self.sched.start()
 
     async def trigger(self, job_id: str) -> str:

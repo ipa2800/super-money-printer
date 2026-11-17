@@ -1,6 +1,8 @@
 // components/Topbar.tsx — 标题 + 周期/聚合 (移动端抽屉式) + 任务状态 chip + 移动端汉堡
+import { useEffect, useState } from "react";
 import { useStore, store } from "../store";
 import { Icon } from "./icons";
+import { marketTime } from "../utils/marketTime";
 
 const PERIODS: { d: number; l: string }[] = [
   { d: 7,   l: "一周" }, { d: 30,  l: "一月" }, { d: 90,  l: "三月" },
@@ -64,8 +66,64 @@ export function Topbar({ onCustomRange, onOpenDrawer }: Props) {
                                 "bg-up/20 text-up"}`}>
         {taskS !== "idle" && (taskL || "空闲")}
       </div>
+      <SessionStatus />
     </header>
   );
+}
+
+// ponytail: 顶栏右侧 chip — 让用户知道现在是否在交易时段, 收盘时显示下次开市时间 (auto-refresh 不动的解释)
+function SessionStatus() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const inS = marketTime.inSession(now);
+  const rush = marketTime.closingRush(now);
+  const label = inS ? (rush ? "收盘冲刺" : "交易中") : "已收盘";
+  const cls = inS
+    ? (rush ? "bg-yellow-500/15 text-yellow-300" : "bg-up/15 text-up")
+    : "bg-ink/10 text-ink-mute";
+  // 收盘时显示下次开盘
+  let sub = "";
+  if (!inS) {
+    const next = nextSessionStart(now);
+    if (next) {
+      const ms = next.getTime() - now.getTime();
+      sub = ms < 3600_000
+        ? `· ${Math.ceil(ms / 60_000)}m 后开市`
+        : `· ${next.getHours().toString().padStart(2,"0")}:${next.getMinutes().toString().padStart(2,"0")} 开市`;
+    }
+  }
+  return (
+    <div className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium ${cls}`}
+         title={inS ? "交易时段, 数据 5s 刷新 (收盘前 30 分钟 3s)" : "非交易时段, auto-refresh 已暂停"}>
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${inS ? "animate-pulse-soft" : ""} ${inS ? (rush ? "bg-yellow-400" : "bg-up") : "bg-ink-mute"}`} />
+      {label}{sub}
+    </div>
+  );
+}
+
+function nextSessionStart(now: Date): Date | null {
+  const dow = now.getDay();
+  // 周末 → 下周一 09:30
+  if (dow === 0 || dow === 6) {
+    const d = new Date(now); d.setDate(d.getDate() + (dow === 0 ? 1 : 2));
+    d.setHours(9, 30, 0, 0);
+    return d;
+  }
+  // 工作日: 上午已收盘 → 13:00, 下午已收盘 → 明天 09:30, 上午未开 → 今天 09:30
+  const t = now.getHours() * 60 + now.getMinutes();
+  const d = new Date(now);
+  if (t < 9 * 60 + 30) { d.setHours(9, 30, 0, 0); return d; }
+  if (t >= 11 * 60 + 30 && t < 13 * 60) { d.setHours(13, 0, 0, 0); return d; }
+  if (t < 15 * 60) return null;  // 交易中
+  // 已收盘 → 明天
+  d.setDate(d.getDate() + 1);
+  // 跳过周末
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  d.setHours(9, 30, 0, 0);
+  return d;
 }
 
 function Segment({ items, variant }: { items: { key: string; active: boolean; onClick: () => void; label: string }[]; variant?: "alt" }) {

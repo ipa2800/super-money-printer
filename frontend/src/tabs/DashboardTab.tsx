@@ -9,9 +9,16 @@ import { AlertPanel } from "../components/AlertPanel";
 import { Icon } from "../components/icons";
 import { fmtAmt } from "../utils/format";
 
+// 首页"指数走势"切指标钮。顺序: 首页 4 大指数 (上证/深证/创业板/科创50) + 板块代表 (300/50/500)
+// ponytail: 后端 index_pool 也同步了这 8 只 (scripts/init_db.py DEFAULT_INDICES)
 const SYMBOLS: [string, string][] = [
-  ["sh.000300", "沪深300"], ["sh.000905", "中证500"], ["sh.000016", "上证50"],
-  ["sz.399006", "创业板指"], ["sh.000688", "科创50"],
+  ["sh.000001", "上证指数"],
+  ["sz.399001", "深证指数"],
+  ["sh.000300", "沪深300"],
+  ["sh.000016", "上证50"],
+  ["sh.000905", "中证500"],
+  ["sz.399006", "创业板指"],
+  ["sh.000688", "科创50"],
 ];
 
 export function DashboardTab() {

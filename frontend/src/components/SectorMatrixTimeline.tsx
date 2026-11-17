@@ -17,6 +17,11 @@ const GRID_DAYS = 8;       // 显示最近 8 天
 const LOOKBACK  = 30;      // 算 RPS_20 / accel 需要的历史长度
 const GRID_COLS = 4;
 
+// ponytail: 模块级 cache, key=日期 (YYYY-MM-DD). 同一天切回来直接复用, 不重算 86 次 HTTP.
+// 数据按日快照, 一天内 sector_history 不变; 跨日自动失效.
+const _cache = new Map<string, { days: string[]; byDay: Record<string, DailyPoint[]> }>();
+const _todayKey = () => new Date().toISOString().slice(0, 10);
+
 interface DailyPoint { code: string; type: string; name: string; rps: number; accel: number; }
 
 export function SectorMatrixTimeline() {
@@ -30,6 +35,14 @@ export function SectorMatrixTimeline() {
     (async () => {
       try {
         setLoading(true);
+        // ponytail: 同日 cache 命中直接复用, 跳过 86 次 HTTP
+        const dayKey = _todayKey();
+        const cached = _cache.get(dayKey);
+        if (cached) {
+          setDays(cached.days);
+          setByDay(cached.byDay);
+          return;
+        }
         // 1. 拿当前所有 industry 板块 (只取 BK 前缀 — 备份源 new_xxxx 没 sector_history, 拉了会卡死)
         const snap = await sector.snapshot();
         const industries = snap.items.filter(i => i.type === "industry" && i.code.startsWith("BK"));
@@ -86,6 +99,8 @@ export function SectorMatrixTimeline() {
         }
         setDays(targetDates);
         setByDay(result);
+        // ponytail: 写入模块级 cache, 同日切回不重算
+        _cache.set(dayKey, { days: targetDates, byDay: result });
       } catch (e: any) {
         setErr(e.message ?? String(e));
       } finally {
@@ -172,6 +187,8 @@ function buildOption(days: string[], byDay: Record<string, DailyPoint[]>): echar
         textBorderColor: "#000000", textBorderWidth: 1,
         formatter: (p: any) => labeled.has(p.value[3]) ? p.value[2] : "",
       },
+      // ponytail: 关掉默认 hideOverlap, 重叠标签用 shiftY 纵向错开 (修 07-01 等象限点扎堆时右边标签消失)
+      labelLayout: { hideOverlap: false, moveOverlap: "shiftY" },
       itemStyle: {
         // ponytail: A 股惯例「红涨绿跌」— 主升浪/反弹红, 顶部/杀跌绿
         color: (p: any) => {

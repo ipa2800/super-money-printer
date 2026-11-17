@@ -17,7 +17,7 @@ from backend.providers.sector import SectorProvider, SectorBackupProvider
 from backend.providers.sse import SSEProvider
 from backend.providers.szse import SZSEProvider
 from backend.providers.tushare import TushareProvider
-from backend.routes import alerts, cache, etf, health, index, jobs, macro, sector, stocks, ws
+from backend.routes import alerts, cache, data_log, etf, health, index, jobs, macro, sector, stocks, ws
 from backend.scheduler import get_scheduler
 
 logging.basicConfig(
@@ -104,6 +104,7 @@ app.include_router(alerts.router)
 app.include_router(cache.router)
 app.include_router(stocks.router)
 app.include_router(sector.router)
+app.include_router(data_log.router)
 
 
 @app.get("/api/config/alerts")

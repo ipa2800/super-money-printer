@@ -22,6 +22,21 @@ DEFAULT_JOBS = [
 ]
 
 
+# ponytail: 8 只主指 — 含首页"指数走势"要的 4 只 + 4 只板块代表。baostock 格式 (sh./sz. 前缀)。
+# 首页走势: 上证(sh.000001) / 深证(sz.399001) / 创业板(sz.399006) / 科创50(sh.000688)
+# 板块代表: 沪深300(sh.000300) / 上证50(sh.000016) / 中证500(sh.000905) / 中证1000(sh.000852)
+DEFAULT_INDICES = [
+    ("sh.000001", "上证指数"),
+    ("sh.000016", "上证50"),
+    ("sh.000300", "沪深300"),
+    ("sh.000688", "科创50"),
+    ("sh.000852", "中证1000"),
+    ("sh.000905", "中证500"),
+    ("sz.399001", "深证指数"),
+    ("sz.399006", "创业板指"),
+]
+
+
 def seed_refresh_jobs(conn) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cur = conn.cursor()
@@ -38,12 +53,23 @@ def seed_refresh_jobs(conn) -> None:
     conn.commit()
 
 
+def seed_index_pool(conn) -> None:
+    """灌默认 8 只主指 — repeat run 安全 (INSERT OR IGNORE), 已存在的 symbol 跳过。"""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.executemany(
+        "INSERT OR IGNORE INTO index_pool (symbol, name, added_at) VALUES (?, ?, ?)",
+        [(sym, name, now) for sym, name in DEFAULT_INDICES],
+    )
+    conn.commit()
+
+
 def main() -> None:
     settings = get_settings()
     print(f"DB path: {settings.db_path_resolved}")
     conn = get_connection()
     init_schema(conn)
     seed_refresh_jobs(conn)
+    seed_index_pool(conn)
     # 验收: 列出所有表
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"

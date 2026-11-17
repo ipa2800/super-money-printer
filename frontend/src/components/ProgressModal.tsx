@@ -20,7 +20,8 @@ export function ProgressModal() {
   }, []);
 
   const close = () => store.set({ taskState: "idle", taskLabel: "" });
-  const open = taskState === "running" || taskState === "failed" || taskState === "done";
+  // ponytail: "done" 不弹全屏 modal, 顶栏 chip 已显示成功状态; 全屏黑底打断操作得不偿失
+  const open = taskState === "running" || taskState === "failed";
 
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 transition-opacity ${open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
